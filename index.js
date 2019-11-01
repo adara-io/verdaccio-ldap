@@ -50,10 +50,14 @@ module.exports = Auth;
 // Attempt to authenticate user against LDAP backend
 //
 Auth.prototype.authenticate = function (username, password, callback) {
-
+  let authenticateAsyncPromise;
   const hash = this.getHashByPasswordOrLogError(username, password);
   if (this._config.cache) {
-    const cached = this._userCache.get(username + hash);
+    let cached = this._userCache.get(username + hash);
+    if (cached && cached.promise) {
+      authenticateAsyncPromise = cached.promise;
+    }
+
     if (cached && cached.password && bcrypt.compareSync(password, cached.password)) {
       if (cached.error) {
         return callback(null, false);
@@ -69,8 +73,14 @@ Auth.prototype.authenticate = function (username, password, callback) {
 
   let currentUser;
   let currentError;
+  if (!authenticateAsyncPromise) {
+    authenticateAsyncPromise = ldapClient.authenticateAsync(username, password);
+    if (this._config.cache) {
+      this._userCache.set(username + hash, { promise: authenticateAsyncPromise });
+    }
+  }
 
-  ldapClient.authenticateAsync(username, password)
+  authenticateAsyncPromise
     .then((user) => {
       if (!user) {
         return [];
